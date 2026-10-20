@@ -1,0 +1,564 @@
+---
+title: "Calculating Exoplanet Habitability: Logistic and Ensemble Models"
+author: "Travis Collier"
+date: "October 18, 2026"
+format: html
+---
+
+### Abstract
+
+This study investigates what factors make exoplanets habitable by using a dataset of 3,950 exoplanets. By employing a multi-stage machine learning pipeline that ranged from logistic regression to ensemble methods like Random Forest and XGBoost, this research identifies the most effective models for detecting rare "Goldilocks" candidates. The results demonstrate that while logistic models struggle with extreme class imbalance, ensemble models can achieve up to 100% precision in habitability classification, providing a good framework for prioritizing deep-space observations.
+
+### Introduction
+
+The search for life beyond our solar system has transitioned from theoretical speculation to a data-intensive science. With thousands of exoplanets discovered by missions like Kepler and TESS, the challenge shifted from finding planets to "vetting" them for habitability. Habitability is defined by a balance of stellar temperature, orbital distance, and planetary radius. This study explores how machine learning can automate the identification of these "Earth-like" signatures, acting as a filter for the massive influx of astronomical data.
+
+### Research Questions
+
+The primary objective of this research is to determine if machine learning can accurately predict exoplanet habitability based on orbital and stellar features. Specifically, this study asks: Which type of model provides the highest specificity when dealing with highly imbalanced astronomical data? Furthermore, which specific physical features, such as equilibrium temperature or orbital semi-major axis, carry the most predictive weight in defining the "Goldilocks Zone"?
+
+### Methods
+
+The research utilized a cleaned dataset of 3,950 exoplanets, processed through a pipeline of scaling, Principal Component Analysis (PCA), and K-Means Clustering to identify initial data structures. Predictive modeling was conducted using five distinct models: Logistic Regression, Neural Networks, Decision Trees, Random Forests, and XGBoost. Models were trained on an 80/20 split, with a specific focus on "Feature Bagging" and "Gradient Boosting" to address the fact that habitable planets represent less than 2% of the total observations.
+
+The primary data for this study was retrieved from the NASA Exoplanet Archive via the Kaggle data science platform. (Napolean, 2026) This dataset provided a consolidated record of 3,950 planetary observations, which allowed for a standardized preprocessing pipeline in the R environment.
+
+The target variable, in_habitable_zone, was engineered based on planetary insolation flux pl_insol, defined as planets receiving between 0.25 and 2.2 times the sunlight of Earth. (Bryson, et. al., 2020)
+
+### Results
+
+The analysis revealed that the Random Forest model with XGBoost significantly outperformed all other models. While Logistic Regression achieved high total accuracy, it failed to identify the majority of habitable candidates. The Random Forest model achieved a Specificity of 0.444 with zero false positives, while XGBoost reached a peak Specificity of 0.555. The R code implemented for the Random Forest model utilized 500 trees and identified pl_eqt (Temperature) and pl_orbsmax (Distance) as the most critical features for classification.
+
+While the Logistic Regression model identified Orbital Distance pl_orbsmax as a significant predictor p \< 0.01, it struggled to accurately classify rare habitable candidates. The ensemble methods, Random Forest and XGBoost, proved far more effective. XGBoost achieved the highest discovery rate (Specificity of 0.555), correctly identifying over half of the potential "Goldilocks" planets by navigating the complex, non-linear relationships between planetary radius pl_rade and equilibrium temperature pl_eqt.
+
+|  |  |  |  |  |
+|---------------|---------------|---------------|---------------|---------------|
+| **Model Type** | **Total Accuracy** | **Specificity (Catching Yes)** | **Balanced Accuracy** | **Verdict** |
+| Logistic Regression | 98.78% | 0.065 | 0.531 | Too Simple (Underfit) |
+| Neural Network | 98.81% | 0.150 | 0.560 | Inconsistent |
+| Decision Tree | 98.99% | 0.222 | 0.610 | Clear Logic / High Bias |
+| Random Forest | 99.37% | 0.444 | 0.722 | Best Precision |
+| XGBoost | 98.86% | 0.555 | 0.774 | Best Discovery Rate |
+
+### R Code
+
+```{r}
+
+# Install and load the library
+
+# if(!require(tidyverse)) install.packages("tidyverse")
+library(readr)
+```
+
+```{r}
+
+# Load the data
+exoplanets_clean <- read_csv("exoplanets_clean.csv") 
+```
+
+```{r}
+
+# Exploratory Data Analysis
+
+# Structure of dataset
+str(exoplanets_clean)
+
+# View the first few rows
+head(exoplanets_clean)
+
+# Summarize the dataset
+summary(exoplanets_clean)
+```
+
+```{r}
+
+# Clean the Dataset
+
+# Find missing values of a variable
+colSums(is.na(exoplanets_clean))
+sum(is.na(exoplanets_clean))
+
+# Check if any columns have 0s that shouldn't
+colSums(exoplanets_clean == 0)
+
+# This removes ANY row that has an NA in any column
+exoplanets_final <- na.omit(exoplanets_clean)
+
+# Filter out rows where st_mass or pl_orbeccen are zero
+# We use > 0 because these values must be positive in reality
+exoplanets_final <- exoplanets_final[exoplanets_final$st_mass > 0 & 
+                                       exoplanets_final$pl_orbeccen > 0, ]
+
+# Check how many rows you have left
+nrow(exoplanets_final)
+
+# This should now return 0 for both
+sum(exoplanets_final$st_mass == 0)
+sum(exoplanets_final$pl_orbeccen == 0)
+
+# Count how many st_met are exactly 0
+sum(exoplanets_final$st_met == 0, na.rm = TRUE)
+
+# Count how many st_met are NA (The Holes)
+sum(is.na(exoplanets_final$st_met))
+```
+
+```{r}
+
+# Feature Engineering
+
+# Create the new categorical variable in_habitable_zone
+# We'll use 'factor' so R knows it's a category (Yes/No)
+exoplanets_final$in_habitable_zone <- ifelse(exoplanets_final$pl_insol > 0.25 & 
+                                               exoplanets_final$pl_insol < 2.2, 
+                                             "Yes", "No")
+
+exoplanets_final$in_habitable_zone <- as.factor(exoplanets_final$in_habitable_zone)
+
+# Get rid of the pl_insol column
+# Setting a column to NULL effectively deletes it from the dataframe
+exoplanets_final$pl_insol <- NULL
+
+# Check your new column names - pl_insol should be missing
+names(exoplanets_final)
+
+# See the breakdown of your new categorical variable
+summary(exoplanets_final$in_habitable_zone)
+
+# Treat disc_year as categorical
+exoplanets_final$disc_year <- as.factor(exoplanets_final$disc_year)
+```
+
+```{r}
+
+# Summarize the Variables
+
+# Summary for Quantitative Variables (13 columns)
+quant_cols <- sapply(exoplanets_final, is.numeric)
+summary(exoplanets_final[, quant_cols])
+
+# Summary for Categorical Variables (5 columns)
+cat_cols <- sapply(exoplanets_final, is.factor) | sapply(exoplanets_final, is.character)
+lapply(exoplanets_final[, cat_cols], table)
+```
+
+```{r}
+
+# Principal Component Analysis
+
+# Prepare data (exclude the response variable)
+pca_data <- exoplanets_final[, quant_cols]
+pca_result <- prcomp(pca_data, center = TRUE, scale. = TRUE)
+
+# See how much variance each 'Pattern' (PC) explains
+summary(pca_result)
+
+# Plot the PCA to see if 'Yes' planets cluster together
+library(ggplot2)
+pca_df <- as.data.frame(pca_result$x)
+pca_df$habitable <- exoplanets_final$in_habitable_zone
+
+ggplot(pca_df, aes(x = PC1, y = PC2, color = habitable)) +
+  geom_point(alpha = 0.5) +
+  theme_minimal() +
+  labs(title = "PCA: Can We Separate Habitable Planets in 2D Space?")
+
+# Now we will scale the quantitative variables
+
+# Explicitly scale the 13 quantitative columns
+# This centers the data (mean=0) and scales it (std dev=1)
+quant_scaled <- scale(exoplanets_final[, quant_cols])
+
+# Perform PCA on the already-scaled data
+pca_result <- prcomp(quant_scaled)
+
+# Check the 'Scree Plot' to see how many dimensions we need
+plot(pca_result, type = "l", main = "PCA Variance Explained")
+
+# View the 'Loadings' to see which variables drive the PCA
+print(pca_result$rotation)
+
+library(ggplot2)
+
+# Create a dataframe for plotting
+pca_plot_df <- as.data.frame(pca_result$x)
+pca_plot_df$in_habitable_zone <- exoplanets_final$in_habitable_zone
+
+# Plot PC1 vs PC2
+ggplot(pca_plot_df, aes(x = PC1, y = PC2, color = in_habitable_zone)) +
+  geom_point(alpha = 0.5, size = 2) +
+  scale_color_manual(values = c("No" = "grey70", "Yes" = "springgreen3")) +
+  theme_minimal() +
+  labs(title = "PCA of Exoplanet Data",
+       subtitle = "Visualizing the First Two Components",
+       x = "PC1 (Most Variance)",
+       y = "PC2 (Second Most Variance)",
+       color = "Habitable?")
+```
+
+```{r}
+
+# Logistic Regression Model
+
+# Convert the scaled matrix to a data frame
+logit_data_scaled <- as.data.frame(quant_scaled)
+
+# Add the response variable back in
+logit_data_scaled$in_habitable_zone <- exoplanets_final$in_habitable_zone
+
+# Build the model using all 13 scaled quantitative variables
+# The '.' means "use everything else in the data frame as a predictor"
+habit_logit_scaled <- glm(in_habitable_zone ~ ., 
+                          data = logit_data_scaled, 
+                          family = "binomial")
+
+# View the results
+summary(habit_logit_scaled)
+
+# Now let's test the logistic model we created
+
+# Generate predicted probabilities from your logistic model
+probabilities <- predict(habit_logit_scaled, type = "response")
+
+# Convert those probabilities into "Yes" or "No"
+# Using 0.5 as the cutoff: if prob > 50%, we call it "Yes"
+predictions <- ifelse(probabilities > 0.5, "Yes", "No")
+predictions <- factor(predictions, levels = c("No", "Yes"))
+
+# Create the table
+test_results <- table(Predicted = predictions, Actual = exoplanets_final$in_habitable_zone)
+print(test_results)
+```
+
+```{r}
+
+# K-Means Clustering
+
+# Run K-means (Ensure centers = 3)
+set.seed(123)
+km_result <- kmeans(quant_scaled, centers = 3, nstart = 25)
+
+# Add the cluster labels to your PCA plotting data frame
+pca_plot_df$cluster <- as.factor(km_result$cluster)
+
+# Now run the plot code again
+library(ggplot2)
+
+ggplot(pca_plot_df, aes(x = PC1, y = PC2, color = cluster)) +
+  geom_point(aes(shape = in_habitable_zone), alpha = 0.6, size = 2.5) +
+  scale_color_brewer(palette = "Set1") + 
+  theme_minimal() +
+  labs(title = "K-Means Clustering of Exoplanets",
+       subtitle = "Clusters Identified in PCA Space",
+       x = "PC1", y = "PC2",
+       color = "Cluster", shape = "Habitable?")
+
+# Cluster profiles
+
+# Attach the cluster results to the main data frame
+exoplanets_final$cluster <- as.factor(km_result$cluster)
+
+# Now run the profile summary using dplyr
+library(dplyr)
+
+cluster_profile <- exoplanets_final %>%
+  group_by(cluster) %>%
+  summarise(
+    Avg_Temp = mean(st_teff, na.rm = TRUE),
+    Avg_Radius = mean(pl_rade, na.rm = TRUE),
+    Avg_Mass = mean(st_mass, na.rm = TRUE),
+    Avg_Dist = mean(sy_dist, na.rm = TRUE),
+    Count = n()
+  )
+
+print(cluster_profile)
+```
+
+```{r}
+
+# Neural Network
+
+library(caret)
+
+# Ensure the response is a factor for caret to split correctly
+exoplanets_final$in_habitable_zone <- as.factor(exoplanets_final$in_habitable_zone)
+
+set.seed(42) # For reproducibility
+# Create an 80/20 split
+trainIndex <- createDataPartition(exoplanets_final$in_habitable_zone, p = 0.8, list = FALSE)
+
+# Re-create the data frames from the scaled numeric matrix
+train_data <- as.data.frame(logit_data_scaled[trainIndex, ])
+test_data  <- as.data.frame(logit_data_scaled[-trainIndex, ])
+
+# Add the response variable back to these new data frames
+train_data$in_habitable_zone <- exoplanets_final$in_habitable_zone[trainIndex]
+test_data$in_habitable_zone  <- exoplanets_final$in_habitable_zone[-trainIndex]
+
+# Convert response to numeric
+train_data$habitable_num <- ifelse(train_data$in_habitable_zone == "Yes", 1, 0)
+test_data$habitable_num  <- ifelse(test_data$in_habitable_zone == "Yes", 1, 0)
+
+library(neuralnet)
+
+# Define the formula: use all 13 quantitative variables to predict 'habitable_num'
+# Exclude the 'in_habitable_zone' text column and 'habitable_num' itself from the predictors
+features <- setdiff(names(logit_data_scaled), "in_habitable_zone")
+nn_formula <- as.formula(paste("habitable_num ~", paste(features, collapse = " + ")))
+
+# Train the model
+# 'hidden = c(5, 3)' creates two hidden layers
+nn_model <- neuralnet(nn_formula, 
+                      data = train_data, 
+                      hidden = c(5, 3), 
+                      linear.output = FALSE, 
+                      err.fct = "ce",       # Cross-entropy is better for classification
+                      likelihood = TRUE)
+
+# 4. Plot the "Brain"
+plot(nn_model)
+
+# Test the Neural Network
+
+# Generate predictions on the Test Set
+# The 'compute' function is used for neuralnet objects
+nn_results <- compute(nn_model, test_data[, features])
+
+# Extract the raw probabilities
+nn_probs <- nn_results$net.result
+
+# Classify based on a 0.5 threshold
+nn_preds <- ifelse(nn_probs > 0.5, "Yes", "No")
+nn_preds <- factor(nn_preds, levels = c("No", "Yes"))
+
+# Compare to Actual Results
+confusionMatrix(nn_preds, test_data$in_habitable_zone)
+
+# Variable Importance: Olden's Algorithm
+
+library(NeuralNetTools)
+
+# Generate the Importance Plot using Olden's Algorithm
+olden(nn_model) +
+  theme_minimal() +
+  labs(title = "Feature Importance: What Drives the Neural Network?",
+       subtitle = "Calculated using Olden's Algorithm (Supports Multiple Layers)",
+       x = "Exoplanet Features",
+       y = "Relative Importance Score") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+# Find planets the Neural Network got right (True Positives)
+nn_success_indices <- which(nn_preds == "Yes" & test_data$in_habitable_zone == "Yes")
+test_planet_names <- exoplanets_final$pl_name[-trainIndex] # Get names for test set only
+
+print("The Neural Network successfully identified these habitable worlds:")
+print(test_planet_names[nn_success_indices])
+```
+
+```{r}
+
+# Improving the logistic model - multicolliearity testing
+
+# install.packages("car")
+library(car)
+
+# Calculate VIF for thr scaled logistic model
+vif_values <- vif(habit_logit_scaled)
+
+# Display the values
+print(vif_values)
+
+# Visualizing VIF (Anything above the red line is a problem)
+barplot(vif_values, main = "VIF Values", horiz = TRUE, col = "steelblue", las = 1)
+abline(v = 5, col = "red", lwd = 3, lty = 2) # Threshold of 5
+
+# Creating the optimized, lean model
+habit_logit_optimized <- glm(in_habitable_zone ~ pl_orbsmax + pl_rade + 
+                               pl_eqt + st_teff + st_met + sy_dist + sy_gaiamag, 
+                             data = logit_data_scaled, 
+                             family = "binomial")
+
+# Check the new VIF
+library(car)
+vif(habit_logit_optimized)
+
+# View the new summary to see if P-values improved
+summary(habit_logit_optimized)
+
+# Stepwise selection
+
+# 'direction = both' means it will try adding and subtracting variables 
+# until it finds the lowest AIC (the most efficient model).
+final_habit_model <- step(habit_logit_optimized, direction = "both")
+
+# View the final version of your model
+summary(final_habit_model)
+
+# Accuracy of the Final Model
+
+# Generate predictions using the new optimized model
+opt_probs <- predict(final_habit_model, type = "response")
+opt_preds <- ifelse(opt_probs > 0.5, "Yes", "No")
+opt_preds <- factor(opt_preds, levels = c("No", "Yes"))
+
+# Compare to actual data
+library(caret)
+confusionMatrix(opt_preds, exoplanets_final$in_habitable_zone)
+```
+
+```{r}
+
+# Decision Tree
+
+# Install and load required libraries
+# install.packages("rpart")
+# install.packages("rpart.plot")
+library(rpart)
+library(rpart.plot)
+
+# 1. Train the tree using the 'Golden Four' variables from the earlier refinement
+# Use 'method = class' because we are predicting a category (Yes/No)
+habitable_tree <- rpart(in_habitable_zone ~ pl_orbsmax + pl_rade + pl_eqt + st_teff, data = train_data, method = "class")
+
+# 2. Plot the tree
+# 'extra = 101' shows the number of observations in each node
+# 'box.palette' makes it green for yes, blue/grey for no
+prp(habitable_tree, type = 2, extra = 101, 
+    box.palette = "RdYlGn", 
+    main = "Decision Tree: The Path to Habitability",
+    faclen = 0)
+
+# Make predictions on the test set
+tree_preds <- predict(habitable_tree, test_data, type = "class")
+
+library(caret)
+confusionMatrix(tree_preds, test_data$in_habitable_zone)
+
+# See which variables the tree found most important
+habitable_tree$variable.importance
+```
+
+```{r}
+
+# Random Forest
+
+# Install and load randomForest
+# install.packages("randomForest")
+library(randomForest)
+
+# Train the Random Forest
+# Use 'importance = TRUE' to see which variables are stars
+set.seed(42)
+rf_model <- randomForest(in_habitable_zone ~ pl_orbsmax + pl_rade + pl_eqt + st_teff, data = train_data, ntree = 500, importance = TRUE)
+
+# Predict and Evaluate
+rf_preds <- predict(rf_model, test_data)
+confusionMatrix(rf_preds, test_data$in_habitable_zone)
+
+# Plot the importance of each variable in the forest
+varImpPlot(rf_model, main = "Random Forest: Final Feature Importance")
+
+# Use the 'reprtree' logic or simply plot the 1st tree in the forest
+# Note: Since the forest uses many trees, pick one to represent the 'average' logic
+library(rpart)
+library(rpart.plot)
+
+# Create a 'simplified' version of the forest's logic for the visual
+fit_visual <- rpart(in_habitable_zone ~ pl_orbsmax + pl_rade + pl_eqt + st_teff, 
+                    data = train_data, 
+                    control = rpart.control(maxdepth = 3))
+
+rpart.plot(fit_visual, 
+           type = 4, 
+           extra = 104, 
+           box.palette = "GnRd", 
+           main = "Inside the Random Forest: Representative Decision Path",
+           shadow.col = "gray")
+
+# "Sweet Spot" Scatterplot
+
+# Add the RF predictions to the test data for plotting
+test_data$rf_pred <- rf_preds
+
+ggplot(test_data, aes(x = pl_orbsmax, y = pl_eqt, color = rf_pred)) +
+  geom_point(alpha = 0.8, size = 3) +
+  scale_x_log10() + 
+  scale_color_manual(values = c("No" = "grey80", "Yes" = "springgreen4")) +
+  theme_minimal() +
+  labs(title = "Random Forest: Predicted Habitable Zone",
+       subtitle = "Green Points Represent the Model's 'Yes' Classifications",
+       x = "Orbital Distance (AU) - Log Scale",
+       y = "Equilibrium Temperature (K)",
+       color = "RF Prediction")
+```
+
+```{r}
+
+# XGBoosting
+
+# Install and load
+# install.packages("xgboost")
+library(xgboost)
+
+# Define the main Four features
+refined_features <- c("pl_orbsmax", "pl_rade", "pl_eqt", "st_teff")
+
+# Prepare data (XGBoost requires numeric matrices)
+train_matrix <- as.matrix(train_data[, refined_features])
+train_label  <- train_data$habitable_num
+
+test_matrix  <- as.matrix(test_data[, refined_features])
+test_label   <- test_data$habitable_num
+
+# 3. Train the XGBoost model
+# Updated XGBoost syntax for the newest version
+set.seed(42)
+xgb_model <- xgboost(x = train_matrix, 
+                     y = train_label, 
+                     params = list(max_depth = 4, 
+                                   learning_rate = 0.1, 
+                                   objective = "reg:logistic"), # Use reg:logistic for numeric 0/1
+                     nrounds = 100,
+                     verbose = 0)
+
+# Predict
+xgb_probs <- predict(xgb_model, test_matrix)
+xgb_preds <- factor(ifelse(xgb_probs > 0.3, "Yes", "No"), levels = c("No", "Yes"))
+
+# Evaluate
+confusionMatrix(xgb_preds, test_data$in_habitable_zone)
+
+# Visualize XGBoost by Importance Matrix
+
+# Get importance matrix
+importance_matrix <- xgb.importance(feature_names = refined_features, model = xgb_model)
+
+# Plot it
+xgb.plot.importance(importance_matrix, 
+                    main = "XGBoost: Which Variables Fixed the Errors?",
+                    col = "darkorange")
+```
+
+### Discussion
+
+The performance of ensemble methods suggests that habitability is defined by non-linear "box-like" boundaries rather than linear trends. The Random Forest’s ability to achieve perfect precision (zero false positives) makes it an ideal tool for mission planning. Conversely, XGBoost’s higher sensitivity highlights its value as a discovery tool, catching a wider net of potential candidates at the cost of a higher false-alarm rate. This trade-off illustrates the necessity of matching models to specific scientific goals.
+
+### Limitations
+
+A primary limitation of this research is the reliance on "proxy" variables for habitability. Because current data lacks direct evidence of atmospheric composition or surface water, the models are forced to infer habitability from thermal and orbital proxies.
+
+Another limitation of this research is the extreme class imbalance; only 1.16% of the exoplanets in the dataset (46 out of 3,950) are classified as habitable. This small sample size makes it difficult for traditional models like Logistic Regression to "learn" the specific features of habitable worlds without being overwhelmed by the majority class. Future models would benefit from synthetic over-sampling or the inclusion of spectroscopic atmospheric data.
+
+### Conclusion
+
+This research concludes that ensemble machine learning models such as Random Forest and XGBoost are the most effective methods for identifying habitable exoplanets in large datasets. By re-discovering the "Goldilocks Zone" through 500+ independent decision paths, these models prove that planetary habitability is a distinct, identifiable physical signature. As NASA moves toward high-resolution missions like the James Webb Space Telescope, these automated vetting pipelines will be essential for focusing our search on the worlds most likely to harbor life.
+
+### References
+
+- NASA Exoplanet Archive. (2026). Nasa Exoplanets Data. \[Data set\]. Kaggle. Published by Pravnav Napolean.
+
+  <https://www.kaggle.com/datasets/pranavnapolean/nasa-exoplanets-data>
+
+- Hastie, James, Tibshirani, and Witten. *An Introduction to Statistical Learning with Applications in R, 2nd Edition*. Springer: 2013.
+
+- Bryson, et. al. *The Occurrence of Rocky Habitable Zone Planets Around Solar-Like Stars from Kepler Data.* 2020. <https://arxiv.org/pdf/2010.14812>
